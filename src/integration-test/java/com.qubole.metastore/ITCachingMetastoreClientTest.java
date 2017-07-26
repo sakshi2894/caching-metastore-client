@@ -13,6 +13,7 @@ import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.metastore.api.StorageDescriptor;
 import org.apache.hadoop.hive.metastore.api.Table;
 
+import org.apache.hadoop.hive.serde.serdeConstants;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -72,47 +73,88 @@ public class ITCachingMetastoreClientTest {
     redis = redisPool.getResource();
   }
 
-  //  public StorageDescriptor(List<FieldSchema> cols, String location, String inputFormat, String outputFormat, boolean compressed, int numBuckets, SerDeInfo serdeInfo, List<String> bucketCols, List<Order> sortCols, Map<String, String> parameters) {
-  public static void createTable (String tableName, String dbName, List<FieldSchema> columnList, Map<String, String> parameters, List<FieldSchema> partitionList, String inputFormat, String outputFormat) throws Exception {
-    StorageDescriptor descriptor = new StorageDescriptor(columnList, "", inputFormat, outputFormat, false, -1, null, null, null, null );
-    hiveMetastoreClient.createTable(new Table(tableName, dbName, "", -1, -1, -1, descriptor, partitionList, parameters, "", "", ""));
-  }
-
   public static void setupSchema() throws Exception {
 
     hiveMetastoreClient.dropDatabase("test_db", true, true, true);
     hiveMetastoreClient.dropDatabase("test_db2", true, true, true);
-    hiveMetastoreClient.createDatabase(new Database("test_db", "", "", null));
-    hiveMetastoreClient.createDatabase(new Database("test_db2", "", "", null));
+    hiveMetastoreClient.createDatabase(new Database("test_db", "", null, null));
+    hiveMetastoreClient.createDatabase(new Database("test_db2", "", null, null));
 
-    createTable("students", "test_db", null, null, null, "", "");
-    createTable("studentsf", "test_db", null, null, null, "", "");
+
+    //create test_db.students
+    Table studentsTable = new Table();
+    List<FieldSchema> studentsFields = new ArrayList<>();
+    studentsFields.add(new FieldSchema("id", serdeConstants.INT_TYPE_NAME, ""));
+    studentsFields.add(new FieldSchema("name", serdeConstants.STRING_TYPE_NAME, ""));
+    StorageDescriptor studentsDescriptor = new StorageDescriptor();
+    studentsDescriptor.setCols(studentsFields);
+
+    studentsTable.setDbName("test_db");
+    studentsTable.setTableName("students");
+    studentsTable.setSd(studentsDescriptor);
+    hiveMetastoreClient.createTable(studentsTable);
+
+    //create test_db.studentsf
+    Table studentsfTable = new Table();
+    List<FieldSchema> studentsfFields = new ArrayList<>();
+    studentsfFields.add(new FieldSchema("id", serdeConstants.FLOAT_TYPE_NAME, ""));
+    studentsfFields.add(new FieldSchema("name", serdeConstants.STRING_TYPE_NAME, ""));
+    StorageDescriptor studentsfDescriptor = new StorageDescriptor();
+    studentsfDescriptor.setCols(studentsfFields);
+
+    studentsfTable.setDbName("test_db");
+    studentsfTable.setTableName("studentsf");
+    studentsfTable.setSd(studentsfDescriptor);
+    hiveMetastoreClient.createTable(studentsfTable);
+
 
     //create test_db.class
-    List<FieldSchema> classColumns = new ArrayList<>();
-    classColumns.add(new FieldSchema("id", "float", ""));
-    classColumns.add(new FieldSchema("name", "string",""));
-    classColumns.add(new FieldSchema("class", "string",""));
+    Table classTable = new Table();
+    List<FieldSchema> classFields = new ArrayList<>();
+    classFields.add(new FieldSchema("id", serdeConstants.FLOAT_TYPE_NAME, ""));
+    classFields.add(new FieldSchema("name", serdeConstants.STRING_TYPE_NAME, ""));
+    classFields.add(new FieldSchema("class", serdeConstants.STRING_TYPE_NAME, ""));
+    StorageDescriptor classDescriptor = new StorageDescriptor();
+    classDescriptor.setCols(classFields);
 
-    createTable("class", "test_db", classColumns, null, null, "", "");
+    classTable.setDbName("test_db");
+    classTable.setTableName("class");
+    classTable.setSd(classDescriptor);
+    hiveMetastoreClient.createTable(classTable);
 
 
-    createTable("students", "test_db2", null, null, null, "", "");
-    createTable("studentsf", "test_db2", null, null, null, "", "");
+    //create test_db2.students
+    studentsTable.setDbName("test_db2");
+    hiveMetastoreClient.createTable(studentsTable);
 
-    List<FieldSchema> marksColumns = new ArrayList<>();
-    marksColumns.add(new FieldSchema("id", "int", ""));
-    marksColumns.add(new FieldSchema("name", "string",""));
-    marksColumns.add(new FieldSchema("marks", "int",""));
+    //create test_db2.studentsf
+    studentsfTable.setDbName("test_db2");
+    hiveMetastoreClient.createTable(studentsfTable);
+
+    //create test_db2.marks
+    Table marksTable = new Table();
+    List<FieldSchema> marksFields = new ArrayList<>();
+    marksFields.add(new FieldSchema("id", serdeConstants.INT_TYPE_NAME, ""));
+    marksFields.add(new FieldSchema("name", serdeConstants.STRING_TYPE_NAME, ""));
+    marksFields.add(new FieldSchema("marks", serdeConstants.INT_TYPE_NAME, ""));
+    StorageDescriptor marksDescriptor = new StorageDescriptor();
+    marksDescriptor.setCols(marksFields);
+    marksDescriptor.setInputFormat("org.apache.hadoop.hive.ql.io.orc.OrcInputFormat");
+    marksDescriptor.setOutputFormat("org.apache.hadoop.hive.ql.io.orc.OrcOutputFormat");
 
     List<FieldSchema> marksPartitions = new ArrayList<>();
-    marksPartitions.add(new FieldSchema("subject", "string", ""));
-    marksPartitions.add(new FieldSchema("date", "string", ""));
+    marksPartitions.add(new FieldSchema("subject", serdeConstants.STRING_TYPE_NAME, ""));
+    marksPartitions.add(new FieldSchema("date", serdeConstants.STRING_TYPE_NAME, ""));
 
-    Map<String, String> parameters = new HashMap<>();
-    parameters.put("transient_lastDdlTime", "12321");
+    //Map<String, String> parameters = new HashMap<>();
+    //parameters.put("transient_lastDdlTime", "12321");
 
-    createTable("marks", "test_db2", marksColumns, parameters, marksPartitions, "org.apache.hadoop.hive.ql.io.orc.OrcInputFormat", "org.apache.hadoop.hive.ql.io.orc.OrcOutputFormat");
+    marksTable.setDbName("test_db2");
+    marksTable.setTableName("marks");
+    marksTable.setSd(marksDescriptor);
+    marksTable.setPartitionKeys(marksPartitions);
+    hiveMetastoreClient.createTable(marksTable);
+
   }
 
   @AfterClass
