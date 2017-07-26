@@ -75,6 +75,13 @@ public class ITCachingMetastoreClientTest {
 
   public static void setupSchema() throws Exception {
 
+    List<String> tables = hiveMetastoreClient.getAllTables("default");
+    LOGGER.info("tableList: ");
+    for (String table : tables) {
+      LOGGER.info("table: " + table);
+    }
+
+
     hiveMetastoreClient.dropDatabase("test_db", true, true, true);
     hiveMetastoreClient.dropDatabase("test_db2", true, true, true);
     hiveMetastoreClient.createDatabase(new Database("test_db", "", null, null));
