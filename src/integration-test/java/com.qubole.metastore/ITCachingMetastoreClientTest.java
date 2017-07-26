@@ -59,7 +59,7 @@ public class ITCachingMetastoreClientTest {
     HiveConf hiveConf = new HiveConf();
     hiveConf.set("javax.jdo.option.ConnectionURL", String.format("jdbc:mysql://%s:3306/%s", dbURL, dbName));
     hiveConf.set("javax.jdo.option.ConnectionUserName", username);
-    hiveConf.set("jdo.option.ConnectionPassword", password);
+    hiveConf.set("javax.jdo.option.ConnectionPassword", password);
     hiveConf.set("javax.jdo.option.ConnectionDriverName", "com.mysql.jdbc.Driver");
     hiveMetastoreClient = new HiveMetaStoreClient(hiveConf);
     int cacheTtlMinutes = 20;
