@@ -8,11 +8,12 @@ import com.qubole.utility.JdkSerializer;
 import org.apache.commons.lang.SerializationUtils;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.HiveMetaStoreClient;
+
 import org.apache.hadoop.hive.metastore.api.Database;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
+import org.apache.hadoop.hive.metastore.api.SerDeInfo;
 import org.apache.hadoop.hive.metastore.api.StorageDescriptor;
 import org.apache.hadoop.hive.metastore.api.Table;
-
 import org.apache.hadoop.hive.serde.serdeConstants;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
@@ -28,9 +29,7 @@ import redis.clients.jedis.Protocol;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -62,7 +61,7 @@ public class ITCachingMetastoreClientTest {
     hiveConf.set("javax.jdo.option.ConnectionUserName", username);
     hiveConf.set("javax.jdo.option.ConnectionPassword", password);
     hiveConf.set("javax.jdo.option.ConnectionDriverName", "com.mysql.jdbc.Driver");
-    hiveConf.set("hive.warehouse.dir", "/home/sakshib/src_sakshib/hive_schema/");
+    hiveConf.set("hive.metastore.warehouse.dir", "/home/sakshib/src_sakshib/hive_schema/");
     hiveMetastoreClient = new HiveMetaStoreClient(hiveConf);
     int cacheTtlMinutes = 20;
     cachingMetastoreClient = new CachingMetastoreClient(
@@ -82,7 +81,6 @@ public class ITCachingMetastoreClientTest {
       LOGGER.info("table: " + table);
     }
 
-
     hiveMetastoreClient.dropDatabase("test_db", true, true, true);
     hiveMetastoreClient.dropDatabase("test_db2", true, true, true);
     hiveMetastoreClient.createDatabase(new Database("test_db", "", null, null));
@@ -96,6 +94,7 @@ public class ITCachingMetastoreClientTest {
     studentsFields.add(new FieldSchema("name", serdeConstants.STRING_TYPE_NAME, ""));
     StorageDescriptor studentsDescriptor = new StorageDescriptor();
     studentsDescriptor.setCols(studentsFields);
+    studentsDescriptor.setSerdeInfo(new SerDeInfo());
 
     studentsTable.setDbName("test_db");
     studentsTable.setTableName("students");
@@ -109,6 +108,7 @@ public class ITCachingMetastoreClientTest {
     studentsfFields.add(new FieldSchema("name", serdeConstants.STRING_TYPE_NAME, ""));
     StorageDescriptor studentsfDescriptor = new StorageDescriptor();
     studentsfDescriptor.setCols(studentsfFields);
+    studentsfDescriptor.setSerdeInfo(new SerDeInfo());
 
     studentsfTable.setDbName("test_db");
     studentsfTable.setTableName("studentsf");
@@ -123,6 +123,7 @@ public class ITCachingMetastoreClientTest {
     classFields.add(new FieldSchema("name", serdeConstants.STRING_TYPE_NAME, ""));
     classFields.add(new FieldSchema("class", serdeConstants.STRING_TYPE_NAME, ""));
     StorageDescriptor classDescriptor = new StorageDescriptor();
+    classDescriptor.setSerdeInfo(new SerDeInfo());
     classDescriptor.setCols(classFields);
 
     classTable.setDbName("test_db");
@@ -149,6 +150,7 @@ public class ITCachingMetastoreClientTest {
     marksDescriptor.setCols(marksFields);
     marksDescriptor.setInputFormat("org.apache.hadoop.hive.ql.io.orc.OrcInputFormat");
     marksDescriptor.setOutputFormat("org.apache.hadoop.hive.ql.io.orc.OrcOutputFormat");
+    marksDescriptor.setSerdeInfo(new SerDeInfo());
 
     List<FieldSchema> marksPartitions = new ArrayList<>();
     marksPartitions.add(new FieldSchema("subject", serdeConstants.STRING_TYPE_NAME, ""));
