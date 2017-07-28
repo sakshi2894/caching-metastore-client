@@ -62,6 +62,7 @@ public class ITCachingMetastoreClientTest {
     hiveConf.set("javax.jdo.option.ConnectionUserName", username);
     hiveConf.set("javax.jdo.option.ConnectionPassword", password);
     hiveConf.set("javax.jdo.option.ConnectionDriverName", "com.mysql.jdbc.Driver");
+    hiveConf.set("hive.warehouse.dir", "/home/sakshib/src_sakshib/hive_schema/");
     hiveMetastoreClient = new HiveMetaStoreClient(hiveConf);
     int cacheTtlMinutes = 20;
     cachingMetastoreClient = new CachingMetastoreClient(
