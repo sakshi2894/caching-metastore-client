@@ -6,9 +6,11 @@ import com.google.common.primitives.Bytes;
 import com.qubole.utility.JdkSerializer;
 
 import org.apache.commons.lang.SerializationUtils;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.HiveMetaStoreClient;
 
+import org.apache.hadoop.hive.metastore.TableType;
 import org.apache.hadoop.hive.metastore.api.Database;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.metastore.api.SerDeInfo;
@@ -17,8 +19,10 @@ import org.apache.hadoop.hive.metastore.api.Table;
 import org.apache.hadoop.hive.serde.serdeConstants;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
+import org.junit.Rule;
 import org.junit.Test;
 
+import org.junit.rules.TemporaryFolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import redis.clients.jedis.Jedis;
@@ -46,6 +50,9 @@ public class ITCachingMetastoreClientTest {
   private static Jedis redis;
   private static String uuid = UUID.randomUUID().toString().replace("-", "");
   private static String PREFIX = "cachingtest_" + uuid;
+
+  @Rule
+  public static TemporaryFolder dbFolder = new TemporaryFolder();
 
   @BeforeClass
   public static void setUp() throws Exception {
@@ -83,16 +90,33 @@ public class ITCachingMetastoreClientTest {
 
     hiveMetastoreClient.dropDatabase("test_db", true, true, true);
     hiveMetastoreClient.dropDatabase("test_db2", true, true, true);
-    hiveMetastoreClient.createDatabase(new Database("test_db", "", null, null));
-    hiveMetastoreClient.createDatabase(new Database("test_db2", "", null, null));
+
+
+
+    Database test_db = new Database();
+    test_db.setName("testdb");
+    String dbLocation = "raw://" + dbFolder.newFolder("test_db" + ".db").toURI().getPath();
+    test_db.setLocationUri(dbLocation);
+
+    Database test_db2 = new Database();
+    test_db2.setName("testdb2");
+    String dbLocation2 = "raw://" + dbFolder.newFolder("test_db2" + ".db").toURI().getPath();
+    test_db2.setLocationUri(dbLocation2);
+
+    hiveMetastoreClient.createDatabase(test_db);
+    hiveMetastoreClient.createDatabase(test_db2);
 
 
     //create test_db.students
     Table studentsTable = new Table();
+    studentsTable.setTableType(TableType.MANAGED_TABLE.toString());
     List<FieldSchema> studentsFields = new ArrayList<>();
     studentsFields.add(new FieldSchema("id", serdeConstants.INT_TYPE_NAME, ""));
     studentsFields.add(new FieldSchema("name", serdeConstants.STRING_TYPE_NAME, ""));
+
     StorageDescriptor studentsDescriptor = new StorageDescriptor();
+    studentsDescriptor.setNumBuckets(1);
+    studentsDescriptor.setLocation(dbLocation + Path.SEPARATOR + "students");
     studentsDescriptor.setCols(studentsFields);
     studentsDescriptor.setSerdeInfo(new SerDeInfo());
 
@@ -169,6 +193,8 @@ public class ITCachingMetastoreClientTest {
 
   @AfterClass
   public static void clearSchema() throws Exception {
+    hiveMetastoreClient.dropDatabase("test_db", true, true, true);
+    hiveMetastoreClient.dropDatabase("test_db2", true, true, true);
 
     /**
     String api_endpoint = "https://" + endpoint + "/api";
