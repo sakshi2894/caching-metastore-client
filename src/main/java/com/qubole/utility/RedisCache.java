@@ -106,6 +106,9 @@ public class RedisCache<K, V> extends AbstractLoadingCache<K, V> implements Load
         LOGGER.info("cache hit, key: " + new String(key));
         return valueSerializer.deserialize(reply);
       }
+    } catch (Exception e) {
+      LOGGER.info("Error fetching key");
+      return null;
     }
   }
 
@@ -143,7 +146,9 @@ public class RedisCache<K, V> extends AbstractLoadingCache<K, V> implements Load
       }
       return value;
     } catch (Throwable e) {
-      this.putNotFound(key, "Does not exist.");
+      if (enableMissingCache) {
+        this.putNotFound(key, "Does not exist.");
+      }
       convertAndThrow(e);
       // never execute
       return null;
@@ -183,6 +188,8 @@ public class RedisCache<K, V> extends AbstractLoadingCache<K, V> implements Load
       } else {
         jedis.set(keyBytes, valueBytes);
       }
+    } catch (Exception e) {
+      LOGGER.error("Error in putting the key to redis");
     }
   }
 
@@ -197,6 +204,8 @@ public class RedisCache<K, V> extends AbstractLoadingCache<K, V> implements Load
       } else {
         jedis.set(keyBytes, valueBytes);
       }
+    } catch (Exception e) {
+      LOGGER.error("Error in putting the key to not-found cache");
     }
   }
 
