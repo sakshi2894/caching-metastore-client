@@ -5,16 +5,21 @@ import com.google.common.primitives.Bytes;
 import org.apache.commons.lang3.SerializationUtils;
 
 import org.junit.Test;
+import org.mockito.Matchers;
+import org.mockito.Mockito;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.exceptions.JedisConnectionException;
 
 import java.io.Serializable;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 
-import static org.mockito.Matchers.*;
+import static org.mockito.Matchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doCallRealMethod;
+import static org.mockito.Mockito.verify;
 
 
 public class RedisCacheTest {
@@ -103,8 +108,6 @@ public class RedisCacheTest {
   }
 
 
-
-
   //Exception thrown if missingcache is enabled, and the key exists in "missing" cache.
   @Test(expected = ExecutionException.class)
   public void testGetFromMissingCache() throws Exception {
@@ -126,6 +129,23 @@ public class RedisCacheTest {
     when(jedis.exists(Bytes.concat(redisCache.getNotFoundPrefix(), key.getBytes()))).thenReturn(true);
 
     redisCache.get(key);
+  }
+
+  //Put not called if get method throws exception
+  @Test
+  public void testGetException() throws Exception {
+    String key = "key";
+    Integer valueExpected = 12;
+
+    Callable<Integer> valueLoader = mock(Callable.class);
+    when(valueLoader.call()).thenReturn(valueExpected);
+
+    RedisCache redisCache = mock(RedisCache.class);
+    when(redisCache.getIfPresent(Matchers.anyObject())).thenThrow(new JedisConnectionException("Get call failed."));
+    doCallRealMethod().when(redisCache).get(key, valueLoader);
+    doCallRealMethod().when(redisCache).getFromSource(key, valueLoader, true);
+    redisCache.get(key, valueLoader);
+    verify(redisCache, Mockito.times(0)).put(Matchers.anyObject(), Matchers.anyObject());
   }
 
 }
