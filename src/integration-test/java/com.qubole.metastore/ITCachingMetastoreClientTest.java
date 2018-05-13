@@ -6,23 +6,15 @@ import com.google.common.primitives.Bytes;
 import com.qubole.utility.JdkSerializer;
 
 import org.apache.commons.lang.SerializationUtils;
-import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.HiveMetaStoreClient;
 
-import org.apache.hadoop.hive.metastore.TableType;
-import org.apache.hadoop.hive.metastore.api.Database;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
-import org.apache.hadoop.hive.metastore.api.SerDeInfo;
-import org.apache.hadoop.hive.metastore.api.StorageDescriptor;
 import org.apache.hadoop.hive.metastore.api.Table;
-import org.apache.hadoop.hive.serde.serdeConstants;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
-import org.junit.Rule;
 import org.junit.Test;
 
-import org.junit.rules.TemporaryFolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import redis.clients.jedis.Jedis;
@@ -30,12 +22,16 @@ import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 import redis.clients.jedis.Protocol;
 
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
+import static jodd.util.ThreadUtil.sleep;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -50,25 +46,25 @@ public class ITCachingMetastoreClientTest {
   private static Jedis redis;
   private static String uuid = UUID.randomUUID().toString().replace("-", "");
   private static String PREFIX = "cachingtest_" + uuid;
+  private static String driverName = "org.apache.hive.jdbc.HiveDriver";
 
-  @Rule
-  public static TemporaryFolder dbFolder = new TemporaryFolder();
+  private static String metastoreUserName;
+  private static String metastorePassword;
+  private static String metastoreDbName;
 
   @BeforeClass
   public static void setUp() throws Exception {
-    String username = System.getProperty("USERNAME");
-    String password = System.getProperty("PASSWORD");
-    String dbName = System.getProperty("DB_NAME");
-    String dbURL = System.getProperty("METASTORE_URL");
+    metastoreUserName = System.getProperty("USERNAME");
+    metastorePassword = System.getProperty("PASSWORD");
+    metastoreDbName = System.getProperty("DB_NAME");
+    String metastoreUrl = System.getProperty("METASTORE_URL");
     String redisEndpoint = System.getProperty("REDIS_ENDPOINT");
 
-
     HiveConf hiveConf = new HiveConf();
-    hiveConf.set("javax.jdo.option.ConnectionURL", String.format("jdbc:mysql://%s:3306/%s", dbURL, dbName));
-    hiveConf.set("javax.jdo.option.ConnectionUserName", username);
-    hiveConf.set("javax.jdo.option.ConnectionPassword", password);
+    hiveConf.set("javax.jdo.option.ConnectionURL", String.format("jdbc:mysql://%s:3306/%s", metastoreUrl, metastoreDbName));
+    hiveConf.set("javax.jdo.option.ConnectionUserName", metastoreUserName);
+    hiveConf.set("javax.jdo.option.ConnectionPassword", metastorePassword);
     hiveConf.set("javax.jdo.option.ConnectionDriverName", "com.mysql.jdbc.Driver");
-    hiveConf.set("hive.metastore.warehouse.dir", "/home/sakshib/src_sakshib/hive_schema/");
     hiveMetastoreClient = new HiveMetaStoreClient(hiveConf);
     int cacheTtlMinutes = 20;
     cachingMetastoreClient = new CachingMetastoreClient(
@@ -80,136 +76,49 @@ public class ITCachingMetastoreClientTest {
     redis = redisPool.getResource();
   }
 
+
+  public static void runDDLStatements(String querystatements) throws Exception {
+
+    Class.forName(driverName);
+
+    Connection connection = DriverManager.getConnection(
+            "jdbc:hive2://localhost:10003/default");
+
+    Statement statement = connection.createStatement();
+    String[] querytList = querystatements.split(";");
+
+    for (String query : querytList) {
+      LOGGER.info("Running: " + query);
+      statement.execute(query);
+    }
+    connection.close();
+  }
+
+
   public static void setupSchema() throws Exception {
 
-    List<String> tables = hiveMetastoreClient.getAllTables("default");
-    LOGGER.info("tableList: ");
-    for (String table : tables) {
-      LOGGER.info("table: " + table);
-    }
+    String query = "drop database if exists test_db CASCADE;" +
+            "drop database if exists test_db2 CASCADE;" +
+            "create database test_db;" +
+            "create table test_db.students (id int, name string);" +
+            "create table test_db.studentsf (id float, name string);" +
+            "create table test_db.class (id float, name string, class string);" +
+            "create table test_db.marks (id int, name string, marks int);" +
+            "create database test_db2;" +
+            "create table test_db2.marks (id int, name string, marks int) partitioned by (subject string, `date` string);" +
+            "create table test_db2.students (id int, name string);" +
+            "create table test_db2.studentsf (id float, name string);";
 
-    hiveMetastoreClient.dropDatabase("test_db", true, true, true);
-    hiveMetastoreClient.dropDatabase("test_db2", true, true, true);
-
-
-
-    Database test_db = new Database();
-    test_db.setName("testdb");
-    String dbLocation = "raw://" + dbFolder.newFolder("test_db" + ".db").toURI().getPath();
-    test_db.setLocationUri(dbLocation);
-
-    Database test_db2 = new Database();
-    test_db2.setName("testdb2");
-    String dbLocation2 = "raw://" + dbFolder.newFolder("test_db2" + ".db").toURI().getPath();
-    test_db2.setLocationUri(dbLocation2);
-
-    hiveMetastoreClient.createDatabase(test_db);
-    hiveMetastoreClient.createDatabase(test_db2);
-
-
-    //create test_db.students
-    Table studentsTable = new Table();
-    studentsTable.setTableType(TableType.MANAGED_TABLE.toString());
-    List<FieldSchema> studentsFields = new ArrayList<>();
-    studentsFields.add(new FieldSchema("id", serdeConstants.INT_TYPE_NAME, ""));
-    studentsFields.add(new FieldSchema("name", serdeConstants.STRING_TYPE_NAME, ""));
-
-    StorageDescriptor studentsDescriptor = new StorageDescriptor();
-    studentsDescriptor.setNumBuckets(1);
-    studentsDescriptor.setLocation(dbLocation + Path.SEPARATOR + "students");
-    studentsDescriptor.setCols(studentsFields);
-    studentsDescriptor.setSerdeInfo(new SerDeInfo());
-
-    studentsTable.setDbName("test_db");
-    studentsTable.setTableName("students");
-    studentsTable.setSd(studentsDescriptor);
-    hiveMetastoreClient.createTable(studentsTable);
-
-    //create test_db.studentsf
-    Table studentsfTable = new Table();
-    List<FieldSchema> studentsfFields = new ArrayList<>();
-    studentsfFields.add(new FieldSchema("id", serdeConstants.FLOAT_TYPE_NAME, ""));
-    studentsfFields.add(new FieldSchema("name", serdeConstants.STRING_TYPE_NAME, ""));
-    StorageDescriptor studentsfDescriptor = new StorageDescriptor();
-    studentsfDescriptor.setCols(studentsfFields);
-    studentsfDescriptor.setSerdeInfo(new SerDeInfo());
-
-    studentsfTable.setDbName("test_db");
-    studentsfTable.setTableName("studentsf");
-    studentsfTable.setSd(studentsfDescriptor);
-    hiveMetastoreClient.createTable(studentsfTable);
-
-
-    //create test_db.class
-    Table classTable = new Table();
-    List<FieldSchema> classFields = new ArrayList<>();
-    classFields.add(new FieldSchema("id", serdeConstants.FLOAT_TYPE_NAME, ""));
-    classFields.add(new FieldSchema("name", serdeConstants.STRING_TYPE_NAME, ""));
-    classFields.add(new FieldSchema("class", serdeConstants.STRING_TYPE_NAME, ""));
-    StorageDescriptor classDescriptor = new StorageDescriptor();
-    classDescriptor.setSerdeInfo(new SerDeInfo());
-    classDescriptor.setCols(classFields);
-
-    classTable.setDbName("test_db");
-    classTable.setTableName("class");
-    classTable.setSd(classDescriptor);
-    hiveMetastoreClient.createTable(classTable);
-
-
-    //create test_db2.students
-    studentsTable.setDbName("test_db2");
-    hiveMetastoreClient.createTable(studentsTable);
-
-    //create test_db2.studentsf
-    studentsfTable.setDbName("test_db2");
-    hiveMetastoreClient.createTable(studentsfTable);
-
-    //create test_db2.marks
-    Table marksTable = new Table();
-    List<FieldSchema> marksFields = new ArrayList<>();
-    marksFields.add(new FieldSchema("id", serdeConstants.INT_TYPE_NAME, ""));
-    marksFields.add(new FieldSchema("name", serdeConstants.STRING_TYPE_NAME, ""));
-    marksFields.add(new FieldSchema("marks", serdeConstants.INT_TYPE_NAME, ""));
-    StorageDescriptor marksDescriptor = new StorageDescriptor();
-    marksDescriptor.setCols(marksFields);
-    marksDescriptor.setInputFormat("org.apache.hadoop.hive.ql.io.orc.OrcInputFormat");
-    marksDescriptor.setOutputFormat("org.apache.hadoop.hive.ql.io.orc.OrcOutputFormat");
-    marksDescriptor.setSerdeInfo(new SerDeInfo());
-
-    List<FieldSchema> marksPartitions = new ArrayList<>();
-    marksPartitions.add(new FieldSchema("subject", serdeConstants.STRING_TYPE_NAME, ""));
-    marksPartitions.add(new FieldSchema("date", serdeConstants.STRING_TYPE_NAME, ""));
-
-    //Map<String, String> parameters = new HashMap<>();
-    //parameters.put("transient_lastDdlTime", "12321");
-
-    marksTable.setDbName("test_db2");
-    marksTable.setTableName("marks");
-    marksTable.setSd(marksDescriptor);
-    marksTable.setPartitionKeys(marksPartitions);
-    hiveMetastoreClient.createTable(marksTable);
+    runDDLStatements(query);
 
   }
 
   @AfterClass
   public static void clearSchema() throws Exception {
-    hiveMetastoreClient.dropDatabase("test_db", true, true, true);
-    hiveMetastoreClient.dropDatabase("test_db2", true, true, true);
 
-    /**
-    String api_endpoint = "https://" + endpoint + "/api";
-    QdsConfiguration configuration = new DefaultQdsConfiguration(api_endpoint, account_auth);
-    QdsClient client = QdsClientFactory.newClient(configuration);
-    String query = "drop database if exists test_db CASCADE;" +
+    String clearSchemaQuery = "drop database if exists test_db CASCADE;" +
             "drop database if exists test_db2 CASCADE;";
-
-    try {
-      CommandResponse commandResponse = client.command().hive().query(query).invoke().get();
-      ResultLatch resultLatch = new ResultLatch(client, commandResponse.getId());
-      resultLatch.awaitResult();
-    } finally {
-      client.close();
-    }**/
+    runDDLStatements(clearSchemaQuery);
   }
 
 
